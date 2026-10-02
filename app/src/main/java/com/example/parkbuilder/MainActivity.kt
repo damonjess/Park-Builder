@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import com.example.parkbuilder.ui.GameScreen
 import com.example.parkbuilder.ui.theme.ParkBuilderTheme
@@ -17,11 +15,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ParkBuilderTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    GameScreen(
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                // No Scaffold: the park should render behind the system bars the way a game
+                // does. Each HUD panel applies its own inset padding instead.
+                GameScreen(modifier = Modifier.fillMaxSize())
             }
         }
     }

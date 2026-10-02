@@ -36,8 +36,9 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun ParkBuilderTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    // Off by default: the game HUD has its own fixed brass-and-teal palette, and Material
+    // You would recolour the Material surfaces underneath it arbitrarily.
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

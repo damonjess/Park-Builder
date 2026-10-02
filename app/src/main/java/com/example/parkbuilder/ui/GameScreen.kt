@@ -66,6 +66,7 @@ fun GameScreen(
     var cameraPlaced by remember { mutableStateOf(false) }
     var ghost by remember { mutableStateOf<BuildGhost?>(null) }
     var category by remember { mutableStateOf(ToolCategory.RIDE) }
+    var gateOpen by remember { mutableStateOf(false) }
 
     // Reading these through rememberUpdatedState keeps the long-lived gesture coroutine
     // from capturing a stale camera or tool.
@@ -312,6 +313,7 @@ fun GameScreen(
             state = state,
             onSpeed = { viewModel.setSpeed(it) },
             onNewPark = { viewModel.newPark() },
+            onGate = { gateOpen = !gateOpen },
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
@@ -320,6 +322,9 @@ fun GameScreen(
             category = category,
             onCategory = { category = it },
             onSelectItem = { viewModel.selectItem(it) },
+            onTicketPrice = { id, price -> viewModel.setTicketPrice(id, price) },
+            gateOpen = gateOpen,
+            onEntranceFee = { viewModel.setEntranceFee(it) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()

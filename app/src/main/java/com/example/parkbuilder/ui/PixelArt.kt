@@ -107,6 +107,31 @@ internal object PixelArt {
     const val WATER_VARIANTS = 4
     const val QUEUE_VARIANTS = 2
 
+    /**
+     * Ground colours sampled from the reference screenshot: an olive, yellow-leaning lawn
+     * and neutral grey paving. Kept private to the generators rather than edited into
+     * [Palette], because [Palette.GrassA] is pinned by a unit test and the ride art still
+     * uses the old palette.
+     */
+    private object Ground {
+        val GrassA = Color(0xFF7E9612)
+        val GrassB = Color(0xFF748C0C)
+        val GrassC = Color(0xFF8A9E1E)
+        val GrassDark = Color(0xFF5E7A06)
+        val GrassLight = Color(0xFF98AE2A)
+        val GrassTuft = Color(0xFF506C04)
+
+        val PathA = Color(0xFF8A8A86)
+        val PathB = Color(0xFF7E7E7E)
+        val PathSpeck = Color(0xFF98988F)
+        val PathDark = Color(0xFF6A6A68)
+        val CurbDark = Color(0xFF55554F)
+        val CurbLight = Color(0xFFDCDCCB)
+
+        val PetalCream = Color(0xFFEAEAD2)
+        val PetalCentre = Color(0xFFC8402A)
+    }
+
     /** Edge bits: which sides of a tile have no same-surface neighbour. */
     const val EDGE_NW = 1
     const val EDGE_NE = 2
@@ -158,12 +183,12 @@ internal object PixelArt {
      */
     fun grassTile(variant: Int): PixelImage {
         val image = PixelImage(TILE_W, TILE_H)
-        val a = Palette.GrassA.packed()
-        val b = Palette.GrassB.packed()
-        val c = Palette.GrassC.packed()
-        val dark = Palette.GrassDark.packed()
-        val light = Palette.GrassLight.packed()
-        val tuft = Palette.GrassTuft.packed()
+        val a = Ground.GrassA.packed()
+        val b = Ground.GrassB.packed()
+        val c = Ground.GrassC.packed()
+        val dark = Ground.GrassDark.packed()
+        val light = Ground.GrassLight.packed()
+        val tuft = Ground.GrassTuft.packed()
 
         for (y in 0 until TILE_H) {
             for (x in 0 until TILE_W) {
@@ -199,8 +224,34 @@ internal object PixelArt {
             if (!inDiamond(x, y + 2)) return@repeat
             val petal = if (rng.nextBoolean()) Palette.Gold.packed() else FLOWER_PINK
             image.rect(x, y, x + 1, y + 1, petal)
-            image.set(x, y + 2, Palette.GrassTuft.packed())
-            image.set(x + 1, y + 2, Palette.GrassTuft.packed())
+            image.set(x, y + 2, Ground.GrassTuft.packed())
+            image.set(x + 1, y + 2, Ground.GrassTuft.packed())
+        }
+
+        // The reference's lawns are scattered with cream daisies, red at the heart. They
+        // come from their own generator so the placement above is unchanged, and they keep
+        // clear of the middle of the tile, which the tests read as the grass weave.
+        val daisies = Random(variant * 7919 + 13)
+        val petal = Ground.PetalCream.packed()
+        val centre = Ground.PetalCentre.packed()
+        var planted = 0
+        var attempts = 0
+        while (planted < 3 && attempts++ < 24) {
+            val x = 8 + daisies.nextInt(TILE_W - 16)
+            val y = 4 + daisies.nextInt(24)
+            if (x in 26..40 && y in 26..38) continue
+            // Margin inside the diamond, so a daisy is never sliced by the tile edge.
+            val inside = abs(x + 0.5f - CX) / (TILE_W / 2f) + abs(y + 0.5f - 16f) / 16f <= 0.78f
+            if (!inside) continue
+            // A five-pixel diamond of petals round a red heart, big enough to read at
+            // the zoom the park opens at.
+            for (dy in -2..2) {
+                for (dx in -2..2) {
+                    if (abs(dx) + abs(dy) <= 2) image.set(x + dx, y + dy, petal)
+                }
+            }
+            image.set(x, y, centre)
+            planted++
         }
         return image
     }
@@ -212,18 +263,19 @@ internal object PixelArt {
      */
     fun pathTile(variant: Int, edgeMask: Int): PixelImage {
         val image = PixelImage(TILE_W, TILE_H)
-        val a = Palette.PathA.packed()
-        val b = Palette.PathB.packed()
-        val dark = Palette.PathDark.packed()
-        val speck = Palette.PathSpeck.packed()
-        val joint = mixArgb(Palette.PathA, Palette.PathDark, 0.55f)
+        val a = Ground.PathA.packed()
+        val b = Ground.PathB.packed()
+        val speck = Ground.PathSpeck.packed()
+        // Joints are a quiet, sparse hint of slab edges: the reference's paving is nearly
+        // flat grey, where the old tiles were heavily gridded.
+        val joint = mixArgb(Ground.PathA, Ground.PathDark, 0.5f)
 
         for (y in 0 until TILE_H) {
             for (x in 0 until TILE_W) {
                 if (!inDiamond(x, y)) continue
                 val course = y / 3
                 val shift = if (course % 2 == 0) 0 else 2
-                val onJoint = ((y % 3 == 0) || ((x + shift) % 4 == 0)) && hash(x, y, variant * 7) % 4 != 0
+                val onJoint = ((y % 3 == 0) || ((x + shift) % 4 == 0)) && hash(x, y, variant * 7) % 4 == 0
                 val h = hash((x + shift) / 4, course, variant * 31 + 5)
                 image.set(
                     x, y, when {
@@ -235,7 +287,7 @@ internal object PixelArt {
                 )
             }
         }
-        curb(image, edgeMask, Palette.Curb, Palette.CurbLight)
+        curb(image, edgeMask, Ground.CurbDark, Ground.CurbLight)
         return image
     }
 

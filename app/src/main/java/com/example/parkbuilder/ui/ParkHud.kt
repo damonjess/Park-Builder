@@ -34,9 +34,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.parkbuilder.game.GameEngine
+import com.example.parkbuilder.game.fairEntranceFee
+import com.example.parkbuilder.game.gatePriceRatio
 import com.example.parkbuilder.game.model.BuildItem
 import com.example.parkbuilder.game.model.GameSpeed
 import com.example.parkbuilder.game.model.GameState
+import com.example.parkbuilder.game.model.Structure
 import com.example.parkbuilder.game.model.ToolCategory
 
 /** Chunky wood-and-brass panel colours, in the spirit of the PS1 interface. */
@@ -61,6 +65,7 @@ fun GameHudTop(
     state: GameState,
     onSpeed: (GameSpeed) -> Unit,
     onNewPark: () -> Unit,
+    onGate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Only the bottom corners are rounded: the strip is flush with the top of the screen.
@@ -98,6 +103,22 @@ fun GameHudTop(
             fontSize = 10.sp,
             maxLines = 1
         )
+        Spacer(modifier = Modifier.width(6.dp))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(5.dp))
+                .background(HudColors.PanelLight)
+                .clickable(onClick = onGate)
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+        ) {
+            Text(
+                text = "🎟 £${state.entranceFee}",
+                color = HudColors.Cream,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = "£${state.money}",
@@ -151,8 +172,14 @@ fun GameHudBottom(
     category: ToolCategory,
     onCategory: (ToolCategory) -> Unit,
     onSelectItem: (BuildItem?) -> Unit,
+    onTicketPrice: (String, Int) -> Unit,
+    gateOpen: Boolean,
+    onEntranceFee: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Tapping a ride, shop or toilet with no build tool active selects it for inspection.
+    val inspected = state.structures.firstOrNull { it.isSelected && it.item.isAttraction }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -217,6 +244,14 @@ fun GameHudBottom(
         }
 
         Spacer(modifier = Modifier.height(3.dp))
+
+        if (inspected != null && state.selectedItem == null) {
+            TicketPriceRow(inspected, onTicketPrice)
+            Spacer(modifier = Modifier.height(3.dp))
+        } else if (gateOpen && state.selectedItem == null) {
+            EntranceFeeRow(state, onEntranceFee)
+            Spacer(modifier = Modifier.height(3.dp))
+        }
 
         // Row 2: items
         Row(
@@ -323,4 +358,110 @@ private fun hintFor(item: BuildItem): String = when {
     item.isTerrainBrush -> "Drag across the ground to lay ${item.displayName.lowercase()}"
     item.category == ToolCategory.SCENERY -> "Drag to plant ${item.displayName.lowercase()}s"
     else -> "Tap an empty spot to place ${item.displayName} (£${item.cost})"
+}
+
+/** Compact inspector: name, visits so far, and − / + controls for the ticket price. */
+@Composable
+private fun TicketPriceRow(structure: Structure, onTicketPrice: (String, Int) -> Unit) {
+    val item = structure.item
+    PriceRow(
+        label = "${item.displayName} · ${structure.lifetimeVisitors} visits · fair £${item.price}",
+        price = structure.ticketPrice,
+        ratio = structure.priceRatio,
+        canLower = structure.ticketPrice > 0,
+        canRaise = structure.ticketPrice < item.maxTicketPrice,
+        onLower = { onTicketPrice(structure.id, structure.ticketPrice - 1) },
+        onRaise = { onTicketPrice(structure.id, structure.ticketPrice + 1) }
+    )
+}
+
+/** Gate controls. A better-rated park can charge more before guests balk. */
+@Composable
+private fun EntranceFeeRow(state: GameState, onEntranceFee: (Int) -> Unit) {
+    val rating = state.stats.rating
+    PriceRow(
+        label = "Entrance · ${state.todayVisitors} guests today · fair £${fairEntranceFee(rating)}",
+        price = state.entranceFee,
+        ratio = gatePriceRatio(state.entranceFee, rating),
+        canLower = state.entranceFee > 0,
+        canRaise = state.entranceFee < GameEngine.MAX_ENTRANCE_FEE,
+        onLower = { onEntranceFee(state.entranceFee - 1) },
+        onRaise = { onEntranceFee(state.entranceFee + 1) }
+    )
+}
+
+@Composable
+private fun PriceRow(
+    label: String,
+    price: Int,
+    ratio: Float,
+    canLower: Boolean,
+    canRaise: Boolean,
+    onLower: () -> Unit,
+    onRaise: () -> Unit
+) {
+    val verdict = when {
+        ratio > 2f -> "Rip-off!" to HudColors.Bad
+        ratio > 1.5f -> "Pricey" to HudColors.Bad
+        ratio < 0.75f -> "Bargain" to HudColors.Good
+        else -> "Fair" to HudColors.Cream
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(HudColors.Panel)
+            .border(1.dp, HudColors.BrassDark, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = HudColors.Cream,
+            fontSize = 9.sp,
+            lineHeight = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = verdict.first,
+            color = verdict.second,
+            fontSize = 9.sp,
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        PriceStepButton("−", canLower, onLower)
+        Text(
+            text = "£$price",
+            color = HudColors.Brass,
+            fontSize = 11.sp,
+            lineHeight = 13.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(36.dp)
+        )
+        PriceStepButton("+", canRaise, onRaise)
+    }
+}
+
+@Composable
+private fun PriceStepButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(26.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (enabled) HudColors.Brass else HudColors.PanelDark)
+            .clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) HudColors.Ink else HudColors.Cream.copy(alpha = 0.4f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }

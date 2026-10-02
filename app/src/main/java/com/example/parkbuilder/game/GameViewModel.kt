@@ -35,6 +35,14 @@ class GameViewModel : ViewModel() {
         _gameState.update { engine.setSpeed(it, speed) }
     }
 
+    fun setEntranceFee(fee: Int) {
+        _gameState.update { engine.setEntranceFee(it, fee) }
+    }
+
+    fun setTicketPrice(structureId: String, price: Int) {
+        _gameState.update { engine.setTicketPrice(it, structureId, price) }
+    }
+
     /** Tap on the park: build with the active tool, otherwise inspect what is there. */
     fun tapTile(col: Int, row: Int) {
         _gameState.update { state ->

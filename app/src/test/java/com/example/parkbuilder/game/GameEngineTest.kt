@@ -4,8 +4,10 @@ import com.example.parkbuilder.game.model.BuildItem
 import com.example.parkbuilder.game.model.GameSpeed
 import com.example.parkbuilder.game.model.GameState
 import com.example.parkbuilder.game.model.ParkMap
+import com.example.parkbuilder.game.model.Structure
 import com.example.parkbuilder.game.model.Terrain
 import com.example.parkbuilder.game.model.TilePos
+import com.example.parkbuilder.game.model.ToolCategory
 import com.example.parkbuilder.game.model.VisitorState
 import kotlin.math.abs
 import kotlin.random.Random
@@ -367,6 +369,140 @@ class GameEngineTest {
             "expected the queued ride to have taken riders",
             dodgems.lifetimeVisitors > 0
         )
+    }
+
+    // ------------------------------------------------------------------
+    // Ticket pricing
+    // ------------------------------------------------------------------
+
+    @Test
+    fun testStructuresStartAtTheFairPrice() {
+        newPark().structures.forEach { assertEquals(it.item.price, it.ticketPrice) }
+    }
+
+    @Test
+    fun testSetTicketPriceChangesOnlyThatStructureAndClamps() {
+        val state = newPark()
+        val walker = engine()
+        val ride = state.structures.first { it.item == BuildItem.CAROUSEL }
+
+        val raised = walker.setTicketPrice(state, ride.id, 7)
+        assertEquals(7, raised.structureById(ride.id)!!.ticketPrice)
+        raised.structures.filter { it.id != ride.id }.forEach { other ->
+            assertEquals(state.structureById(other.id)!!.ticketPrice, other.ticketPrice)
+        }
+
+        val tooHigh = walker.setTicketPrice(state, ride.id, 10_000)
+        assertEquals(ride.item.maxTicketPrice, tooHigh.structureById(ride.id)!!.ticketPrice)
+
+        val negative = walker.setTicketPrice(state, ride.id, -5)
+        assertEquals(0, negative.structureById(ride.id)!!.ticketPrice)
+    }
+
+    @Test
+    fun testSceneryHasNoTicketPrice() {
+        val state = newPark()
+        val walker = engine()
+        val tile = freeSpot(state, BuildItem.BENCH)
+        val built = walker.applyTool(state, BuildItem.BENCH, tile.col, tile.row)
+        val bench = built.structures.first { it.item == BuildItem.BENCH }
+
+        assertEquals(built, walker.setTicketPrice(built, bench.id, 3))
+    }
+
+    @Test
+    fun testPriceAppealFallsAsThePriceRises() {
+        val ride = newPark().structures.first { it.item == BuildItem.DODGEMS }
+
+        val free = priceAppeal(ride.copy(ticketPrice = 0))
+        val fair = priceAppeal(ride)
+        val dear = priceAppeal(ride.copy(ticketPrice = ride.item.price * 2))
+        val gouge = priceAppeal(ride.copy(ticketPrice = ride.item.price * 3))
+
+        assertEquals(1f, fair, 0.001f)
+        assertTrue("free should beat fair", free > fair)
+        assertTrue("double price should be less appealing", dear < fair)
+        assertEquals("triple price kills demand", 0f, gouge, 0.001f)
+    }
+
+    @Test
+    fun testGougedRidesLoseTheirRiders() {
+        fun ridesBooked(priceFor: (Structure) -> Int): Int {
+            val walker = engine()
+            var state = newPark()
+            state = state.copy(structures = state.structures.map { it.copy(ticketPrice = priceFor(it)) })
+            repeat(4_000) { state = walker.update(state, 0.05f) }
+            return state.structures
+                .filter { it.item.category == ToolCategory.RIDE }
+                .sumOf { it.lifetimeVisitors }
+        }
+
+        val fair = ridesBooked { it.item.price }
+        val gouged = ridesBooked { it.item.maxTicketPrice }
+
+        assertTrue("expected rides to be used at the fair price", fair > 0)
+        assertTrue("gouged rides ($gouged) should see fewer riders than fair ones ($fair)", gouged < fair)
+    }
+
+    // ------------------------------------------------------------------
+    // Entrance fee
+    // ------------------------------------------------------------------
+
+    @Test
+    fun testSetEntranceFeeClamps() {
+        val state = newPark()
+        val walker = engine()
+
+        assertEquals(12, walker.setEntranceFee(state, 12).entranceFee)
+        assertEquals(GameEngine.MAX_ENTRANCE_FEE, walker.setEntranceFee(state, 999).entranceFee)
+        assertEquals(0, walker.setEntranceFee(state, -3).entranceFee)
+    }
+
+    @Test
+    fun testFairEntranceFeeGrowsWithRating() {
+        assertTrue(fairEntranceFee(80) > fairEntranceFee(20))
+        assertEquals(1f, gateAppeal(fairEntranceFee(50), 50), 0.001f)
+        assertTrue("free entry should be the most appealing", gateAppeal(0, 50) > gateAppeal(fairEntranceFee(50), 50))
+        assertEquals(0f, gateAppeal(fairEntranceFee(50) * 3, 50), 0.001f)
+    }
+
+    @Test
+    fun testTheGateFeeComesOutOfTheGuestsWallet() {
+        val state = newPark()
+
+        val free = engine(7).spawnVisitor(state.copy(entranceFee = 0), 0)!!
+        val paying = engine(7).spawnVisitor(state.copy(entranceFee = 10), 0)!!
+
+        assertEquals(10, free.wallet - paying.wallet)
+    }
+
+    @Test
+    fun testTheFirstArrivalPaysTheGateFeeIntoTheBank() {
+        val walker = engine()
+        var state = newPark().copy(entranceFee = 10)
+
+        var steps = 0
+        while (state.totalVisitors == 0 && steps++ < 2_000) state = walker.update(state, 0.05f)
+
+        assertEquals(1, state.totalVisitors)
+        assertEquals(10, state.todayIncome)
+        assertEquals(12000 + 10, state.money)
+    }
+
+    @Test
+    fun testGougingAtTheGateKeepsCrowdsAway() {
+        fun arrivals(fee: Int): Int {
+            val walker = engine()
+            var state = newPark().copy(entranceFee = fee)
+            repeat(3_000) { state = walker.update(state, 0.05f) }
+            return state.totalVisitors
+        }
+
+        val free = arrivals(0)
+        val gouged = arrivals(GameEngine.MAX_ENTRANCE_FEE)
+
+        assertTrue("expected guests at a free gate", free > 0)
+        assertTrue("a maxed gate fee ($gouged) should draw fewer guests than a free one ($free)", gouged < free)
     }
 
     /** First tile where [item] could legally be built today. */

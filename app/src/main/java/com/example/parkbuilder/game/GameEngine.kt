@@ -42,6 +42,7 @@ class GameEngine(private val random: Random = Random.Default) {
         /** Real seconds per in-game day at 1x speed. */
         const val DAY_SECONDS = 60f
         const val MAX_VISITORS = 110
+        const val MAX_ENTRANCE_FEE = 30
         const val NEED_THRESHOLD = 0.42f
         const val DEMOLISH_REFUND = 0.5f
 
@@ -127,16 +128,22 @@ class GameEngine(private val random: Random = Random.Default) {
         var carried = spawnTimer + dt
         var totalVisitors = currentState.totalVisitors
         var todayVisitors = currentState.todayVisitors
-        val interval = spawnInterval(currentState.stats.rating)
-        while (carried >= interval && visitors.size < MAX_VISITORS) {
+        val gateRating = currentState.stats.rating
+        val appealAtGate = gateAppeal(currentState.entranceFee, gateRating)
+        val interval = spawnInterval(gateRating) / appealAtGate.coerceAtLeast(0.05f)
+        var gateTakings = 0
+        while (appealAtGate > 0f && carried >= interval && visitors.size < MAX_VISITORS) {
             carried -= interval
             val fresh = spawnVisitor(currentState, visitors.size)
             if (fresh == null) break
             visitors = visitors + fresh
             totalVisitors++
             todayVisitors++
+            gateTakings += currentState.entranceFee
         }
-        spawnTimer = carried
+        // Nobody queues outside a gate they think is a rip-off, so no arrivals bank up for later.
+        spawnTimer = if (appealAtGate > 0f) carried else 0f
+        earned += gateTakings
 
         // ---- Buildings ---------------------------------------------------
         val structures = currentState.structures.map { structure ->
@@ -329,25 +336,27 @@ class GameEngine(private val random: Random = Random.Default) {
         // Shops and facilities have no seat limit; rides do.
         val capacity = seatLimit(target)
         if (target.riders + ledger.ridersFor(target.id) >= capacity ||
-            visitor.wallet < target.item.price
+            visitor.wallet < target.ticketPrice
         ) {
             return continueVisit(state, visitor.copy(targetId = null), dt, walkable, occupied, ledger)
         }
 
         ledger.seat(target.id)
-        return Outcome(applyUse(visitor, target), false, target.item.price)
+        return Outcome(applyUse(visitor, target), false, target.ticketPrice)
     }
 
     /** Applies the effect of one ride / meal / restroom visit to a visitor. */
     private fun applyUse(visitor: Visitor, target: Structure): Visitor {
         val item = target.item
+        // Value for money: gouging sours a guest's mood, a bargain sweetens it.
+        val valueMood = moodFromPrice(target.priceRatio)
         val next = visitor.copy(
             state = VisitorState.USING,
             targetId = target.id,
             useTimer = item.useSeconds,
-            wallet = visitor.wallet - item.price,
+            wallet = visitor.wallet - target.ticketPrice,
             ridesTaken = visitor.ridesTaken + 1,
-            happiness = (visitor.happiness + item.excitement * 0.45f).coerceAtMost(1f)
+            happiness = (visitor.happiness + item.excitement * 0.45f + valueMood).coerceIn(0f, 1f)
         )
         return when (item.need) {
             Need.HUNGER -> next.copy(hunger = 0f, happiness = (next.happiness + 0.15f).coerceAtMost(1f))
@@ -491,7 +500,7 @@ class GameEngine(private val random: Random = Random.Default) {
         if (slot < 0) return leaveQueue(state, visitor, dt, walkable, occupied, ledger)
 
         // Waiting this long with no money left is a waste of everybody's day.
-        if (visitor.wallet < target.item.price) {
+        if (visitor.wallet < target.ticketPrice) {
             occupied[queueIndex(state, visitor.tileCol, visitor.tileRow)] = false
             return continueVisit(
                 state,
@@ -509,7 +518,7 @@ class GameEngine(private val random: Random = Random.Default) {
             }
             ledger.seat(target.id)
             occupied[here] = false
-            return Outcome(applyUse(visitor, target), false, target.item.price)
+            return Outcome(applyUse(visitor, target), false, target.ticketPrice)
         }
 
         val next = chain[slot - 1]
@@ -581,7 +590,7 @@ class GameEngine(private val random: Random = Random.Default) {
         state.structures.forEach { structure ->
             val item = structure.item
             if (!item.isAttraction) return@forEach
-            if (visitor.wallet < item.price) return@forEach
+            if (visitor.wallet < structure.ticketPrice) return@forEach
             if (!perimeterReachable(structure, state.map, walkable)) return@forEach
             val weight = interest(visitor, structure)
             if (weight > 0f) scored += structure to weight
@@ -598,7 +607,16 @@ class GameEngine(private val random: Random = Random.Default) {
     }
 
     /** How much a visitor fancies this particular building right now. */
-    private fun interest(visitor: Visitor, structure: Structure): Float = when {
+    private fun interest(visitor: Visitor, structure: Structure): Float {
+        val base = baseInterest(visitor, structure)
+        if (base <= 0f) return 0f
+        val appeal = priceAppeal(structure)
+        // Guests who are desperate for food, drink or a toilet haggle far less than thrill seekers.
+        val demand = if (structure.item.need != null) 1f + (appeal - 1f) * 0.5f else appeal
+        return base * demand
+    }
+
+    private fun baseInterest(visitor: Visitor, structure: Structure): Float = when {
         structure.item.need == Need.HUNGER ->
             if (visitor.hunger > NEED_THRESHOLD) visitor.hunger * 6f else 0f
         structure.item.need == Need.THIRST ->
@@ -641,8 +659,10 @@ class GameEngine(private val random: Random = Random.Default) {
             col = start.col + 0.5f,
             row = start.row + 0.5f,
             state = VisitorState.WALKING,
-            happiness = 0.62f + random.nextFloat() * 0.25f,
-            wallet = 40 + random.nextInt(85),
+            happiness = (0.62f + random.nextFloat() * 0.25f +
+                moodFromPrice(gatePriceRatio(state.entranceFee, state.stats.rating))).coerceIn(0f, 1f),
+            // The fee is paid at the gate, so it comes out of what they brought.
+            wallet = (40 + random.nextInt(85) - state.entranceFee).coerceAtLeast(0),
             paletteIndex = abs(random.nextInt()) % 8,
             speed = 1.35f + random.nextFloat() * 0.8f
         )
@@ -726,6 +746,25 @@ class GameEngine(private val random: Random = Random.Default) {
     }
 
     fun setSpeed(state: GameState, speed: GameSpeed): GameState = state.copy(speed = speed)
+
+    /** Sets the gate price, clamped to 0..[MAX_ENTRANCE_FEE]. */
+    fun setEntranceFee(state: GameState, fee: Int): GameState {
+        val clamped = fee.coerceIn(0, MAX_ENTRANCE_FEE)
+        return if (clamped == state.entranceFee) state else state.copy(entranceFee = clamped)
+    }
+
+    /** Sets what [structureId] charges per visit, clamped to 0..[BuildItem.maxTicketPrice]. */
+    fun setTicketPrice(state: GameState, structureId: String, price: Int): GameState {
+        val target = state.structureById(structureId) ?: return state
+        if (!target.item.isAttraction) return state
+        val clamped = price.coerceIn(0, target.item.maxTicketPrice)
+        if (clamped == target.ticketPrice) return state
+        return state.copy(
+            structures = state.structures.map {
+                if (it.id == structureId) it.copy(ticketPrice = clamped) else it
+            }
+        )
+    }
 
     fun notify(state: GameState, text: String): GameState =
         state.copy(message = text, messageTimer = 2.5f)
@@ -975,3 +1014,29 @@ fun placementFor(state: GameState, item: BuildItem, col: Int, row: Int): Placeme
     }
     return if (state.money >= item.cost) Placement.OK else Placement.NOT_ENOUGH_MONEY
 }
+
+/**
+ * The demand curve: 1.0 at the fair price, up to 1.4 when it is free, and falling to zero
+ * at three times the fair price, where rides and shops stop being chosen at all.
+ */
+internal fun priceAppeal(structure: Structure): Float {
+    if (structure.item.price <= 0) return 1f
+    return demandCurve(structure.priceRatio)
+}
+
+/** Shared by rides, shops and the gate: 1.0 at the fair price, 0 at three times it. */
+internal fun demandCurve(ratio: Float): Float = (1.5f - 0.5f * ratio).coerceIn(0f, 1.4f)
+
+/** Mood swing from value for money: gouging sours a guest, a bargain sweetens them. */
+internal fun moodFromPrice(ratio: Float): Float = when {
+    ratio > 1.5f -> -(ratio - 1.5f) * 0.05f
+    ratio < 0.75f -> (0.75f - ratio) * 0.05f
+    else -> 0f
+}
+
+/** What the gate is worth charging: a better-rated park can ask for more. */
+fun fairEntranceFee(rating: Int): Int = 2 + rating / 10
+
+fun gatePriceRatio(fee: Int, rating: Int): Float = fee / fairEntranceFee(rating).toFloat()
+
+internal fun gateAppeal(fee: Int, rating: Int): Float = demandCurve(gatePriceRatio(fee, rating))

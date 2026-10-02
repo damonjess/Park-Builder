@@ -114,6 +114,9 @@ enum class BuildItem(
         get() = category == ToolCategory.RIDE || category == ToolCategory.SHOP || category == ToolCategory.FACILITY
 
     val isTerrainBrush: Boolean get() = category == ToolCategory.TERRAIN
+
+    /** The most the player may charge: four times the fair price. */
+    val maxTicketPrice: Int get() = price * 4
 }
 
 /** A building the player has placed on the map. */
@@ -128,8 +131,13 @@ data class Structure(
     val riders: Int = 0,
     val lifetimeVisitors: Int = 0,
     val revenue: Int = 0,
-    val ageSeconds: Float = 0f
+    val ageSeconds: Float = 0f,
+    /** What one visitor pays each time. Starts at the item's fair price; the player can change it. */
+    val ticketPrice: Int = item.price
 ) {
+    /** 1.0 is the fair price, above 1 is overpriced and below 1 is a bargain. */
+    val priceRatio: Float get() = if (item.price <= 0) 1f else ticketPrice / item.price.toFloat()
+
     val wTiles: Int get() = item.wTiles
     val hTiles: Int get() = item.hTiles
 
@@ -232,6 +240,8 @@ data class ParkStats(
 data class GameState(
     val parkName: String = "Wonderland",
     val money: Int = 12000,
+    /** What each guest pays at the gate on arrival. Set by the player, 0..[com.example.parkbuilder.game.GameEngine.MAX_ENTRANCE_FEE]. */
+    val entranceFee: Int = 6,
     val map: ParkMap,
     val structures: List<Structure> = emptyList(),
     val visitors: List<Visitor> = emptyList(),

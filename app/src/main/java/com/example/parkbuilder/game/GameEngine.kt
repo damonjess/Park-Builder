@@ -26,7 +26,10 @@ enum class Placement {
     OCCUPIED,
     BUILT_OVER,
     NOTHING_TO_DEMOLISH,
-    NOT_ENOUGH_MONEY
+    NOT_ENOUGH_MONEY,
+
+    /** Queue lines have to be single file, or guests get stuck in a dead end. */
+    QUEUE_JUNCTION
 }
 
 /**
@@ -73,6 +76,15 @@ class GameEngine(private val random: Random = Random.Default) {
     private var scratchCameFrom = IntArray(0)
     private var scratchQueue = IntArray(0)
 
+    /** Which queue tiles are taken this frame. Rebuilt in [seedQueueOccupancy]. */
+    private var scratchOccupied = BooleanArray(0)
+
+    /**
+     * Queue lines, ordered head (next to the ride) to tail. Rebuilt once per frame so a
+     * whole crowd shuffling forwards costs one walk per attraction instead of one each.
+     */
+    private val chainCache = HashMap<String, List<TilePos>>()
+
     private fun prepareScratch(size: Int) {
         if (scratchReachable.size >= size) return
         scratchReachable = BooleanArray(size)
@@ -80,6 +92,7 @@ class GameEngine(private val random: Random = Random.Default) {
         scratchGoals = BooleanArray(size)
         scratchCameFrom = IntArray(size)
         scratchQueue = IntArray(size)
+        scratchOccupied = BooleanArray(size)
     }
 
     // ==================================================================
@@ -96,13 +109,15 @@ class GameEngine(private val random: Random = Random.Default) {
         val map = currentState.map
         // One flood fill per frame: every reachability question below reads this.
         val walkable = floodFillFromGate(map, currentState.entrance)
+        chainCache.clear()
+        val occupied = seedQueueOccupancy(currentState)
 
         val ledger = Ledger()
         var earned = 0
         val survivors = ArrayList<Visitor>(currentState.visitors.size + 4)
 
         currentState.visitors.forEach { visitor ->
-            val outcome = stepVisitor(currentState, visitor, dt, walkable, ledger)
+            val outcome = stepVisitor(currentState, visitor, dt, walkable, occupied, ledger)
             earned += outcome.income
             if (!outcome.remove) survivors += outcome.visitor
         }
@@ -213,12 +228,14 @@ class GameEngine(private val random: Random = Random.Default) {
         visitor: Visitor,
         dt: Float,
         walkable: BooleanArray,
+        occupied: BooleanArray,
         ledger: Ledger
     ): Outcome {
         val aged = growNeeds(visitor, dt)
         return when (aged.state) {
-            VisitorState.USING -> finishUse(state, aged, dt, walkable, ledger)
-            else -> walkTowards(state, aged, dt, walkable, ledger)
+            VisitorState.USING -> finishUse(state, aged, dt, walkable, occupied, ledger)
+            VisitorState.QUEUEING -> stepQueue(state, aged, dt, walkable, occupied, ledger)
+            else -> walkTowards(state, aged, dt, walkable, occupied, ledger)
         }
     }
 
@@ -227,6 +244,7 @@ class GameEngine(private val random: Random = Random.Default) {
         visitor: Visitor,
         dt: Float,
         walkable: BooleanArray,
+        occupied: BooleanArray,
         ledger: Ledger
     ): Outcome {
         val remaining = visitor.useTimer - dt
@@ -242,7 +260,7 @@ class GameEngine(private val random: Random = Random.Default) {
             pathIndex = 0,
             useTimer = 0f
         )
-        return continueVisit(state, rested, dt, walkable, ledger)
+        return continueVisit(state, rested, dt, walkable, occupied, ledger)
     }
 
     /** Follows the remaining path; on arrival either uses a building or goes home. */
@@ -251,11 +269,16 @@ class GameEngine(private val random: Random = Random.Default) {
         visitor: Visitor,
         dt: Float,
         walkable: BooleanArray,
+        occupied: BooleanArray,
         ledger: Ledger
     ): Outcome {
         if (visitor.pathIndex >= visitor.path.size) {
-            return if (visitor.state == VisitorState.LEAVING) Outcome(visitor, true, 0)
-            else continueVisit(state, visitor, dt, walkable, ledger)
+            return when (visitor.state) {
+                VisitorState.LEAVING -> Outcome(visitor, true, 0)
+                // Reached the back of a queue: stand here and let the line advance.
+                VisitorState.QUEUEING -> Outcome(visitor, false, 0)
+                else -> continueVisit(state, visitor, dt, walkable, occupied, ledger)
+            }
         }
 
         val node = visitor.path[visitor.pathIndex]
@@ -288,8 +311,9 @@ class GameEngine(private val random: Random = Random.Default) {
         val target = state.structureById(moved.targetId)
         return when {
             moved.state == VisitorState.LEAVING -> Outcome(moved, true, 0)
-            target == null -> continueVisit(state, moved, dt, walkable, ledger)
-            else -> beginUse(state, moved, target, dt, walkable, ledger)
+            moved.state == VisitorState.QUEUEING -> Outcome(moved, false, 0)
+            target == null -> continueVisit(state, moved, dt, walkable, occupied, ledger)
+            else -> beginUse(state, moved, target, dt, walkable, occupied, ledger)
         }
     }
 
@@ -299,14 +323,15 @@ class GameEngine(private val random: Random = Random.Default) {
         target: Structure,
         dt: Float,
         walkable: BooleanArray,
+        occupied: BooleanArray,
         ledger: Ledger
     ): Outcome {
         // Shops and facilities have no seat limit; rides do.
-        val capacity = if (target.item.capacity > 0) target.item.capacity else Int.MAX_VALUE
+        val capacity = seatLimit(target)
         if (target.riders + ledger.ridersFor(target.id) >= capacity ||
             visitor.wallet < target.item.price
         ) {
-            return continueVisit(state, visitor.copy(targetId = null), dt, walkable, ledger)
+            return continueVisit(state, visitor.copy(targetId = null), dt, walkable, occupied, ledger)
         }
 
         ledger.seat(target.id)
@@ -338,12 +363,31 @@ class GameEngine(private val random: Random = Random.Default) {
         visitor: Visitor,
         dt: Float,
         walkable: BooleanArray,
+        occupied: BooleanArray,
         ledger: Ledger
     ): Outcome {
         if (shouldLeave(state, visitor)) return sendHome(state, visitor)
 
         val target = chooseTarget(state, visitor, walkable) ?: return sendHome(state, visitor)
-        val path = findPath(state.map, TilePos(visitor.tileCol, visitor.tileRow), target.perimeter())
+        val from = TilePos(visitor.tileCol, visitor.tileRow)
+
+        // A queue line beats walking straight up to the ride: guests join the back of it
+        // and shuffle forwards instead of crowding the entrance.
+        val chain = cachedQueueChain(state.map, target)
+        if (chain.isNotEmpty()) {
+            val toTail = findPath(state.map, from, listOf(chain.last()))
+            if (toTail != null) {
+                val queued = visitor.copy(
+                    state = VisitorState.QUEUEING,
+                    targetId = target.id,
+                    path = toTail,
+                    pathIndex = 0
+                )
+                return walkTowards(state, queued, dt, walkable, occupied, ledger)
+            }
+        }
+
+        val path = findPath(state.map, from, target.perimeter())
             ?: return sendHome(state, visitor)
 
         val routed = visitor.copy(
@@ -352,8 +396,156 @@ class GameEngine(private val random: Random = Random.Default) {
             path = path,
             pathIndex = 0
         )
-        return walkTowards(state, routed, dt, walkable, ledger)
+        return walkTowards(state, routed, dt, walkable, occupied, ledger)
     }
+
+    // ------------------------------------------------------------------
+    // Queue lines
+    // ------------------------------------------------------------------
+
+    /** Seats a ride offers, or effectively unlimited for shops and facilities. */
+    private fun seatLimit(target: Structure): Int =
+        if (target.item.capacity > 0) target.item.capacity else Int.MAX_VALUE
+
+    /**
+     * The queue line running into [structure], ordered head (the tile beside the ride that
+     * guests board from) to tail (the back of the line).
+     *
+     * Only queue tiles that touch the footprint can be an entrance, and the line is walked
+     * one tile at a time, so a single-file queue comes out in order. Branches are ignored:
+     * the longest chain wins, which is the one the player actually drew. Empty when the
+     * attraction has no queue path attached.
+     */
+    fun queueChain(map: ParkMap, structure: Structure): List<TilePos> =
+        computeQueueChain(map, structure)
+
+    /** Per-frame wrapper: the map cannot change mid-frame, so one walk serves everybody. */
+    private fun cachedQueueChain(map: ParkMap, structure: Structure): List<TilePos> =
+        chainCache.getOrPut(structure.id) { computeQueueChain(map, structure) }
+
+    private fun computeQueueChain(map: ParkMap, structure: Structure): List<TilePos> {
+        val starts = structure.perimeter().filter {
+            map.terrainAt(it.col, it.row) == Terrain.QUEUE
+        }
+        var best = emptyList<TilePos>()
+        starts.forEach { start ->
+            val chain = ArrayList<TilePos>(16)
+            chain += start
+            var current = start
+            while (chain.size <= 64) {
+                var next: TilePos? = null
+                for (d in 0 until 4) {
+                    val nc = current.col + DX[d]
+                    val nr = current.row + DY[d]
+                    if (!map.inBounds(nc, nr)) continue
+                    if (map.terrainAt(nc, nr) != Terrain.QUEUE) continue
+                    if (chain.any { it.col == nc && it.row == nr }) continue
+                    next = TilePos(nc, nr)
+                    break
+                }
+                val step = next ?: break
+                chain += step
+                current = step
+            }
+            if (chain.size > best.size) best = chain
+        }
+
+        return best
+    }
+
+    /** Marks every tile currently held by a queuing guest, so nobody doubles up. */
+    private fun seedQueueOccupancy(state: GameState): BooleanArray {
+        prepareScratch(state.map.tileCount)
+        val occupied = scratchOccupied
+        occupied.fill(false)
+        state.visitors.forEach { visitor ->
+            if (visitor.state != VisitorState.QUEUEING) return@forEach
+            if (!state.map.inBounds(visitor.tileCol, visitor.tileRow)) return@forEach
+            occupied[visitor.tileRow * state.map.cols + visitor.tileCol] = true
+        }
+        return occupied
+    }
+
+    /**
+     * One frame in the life of a queuing guest: advance a tile towards the front when the
+     * one in front is free, or board the ride once they are at the head of the line.
+     */
+    private fun stepQueue(
+        state: GameState,
+        visitor: Visitor,
+        dt: Float,
+        walkable: BooleanArray,
+        occupied: BooleanArray,
+        ledger: Ledger
+    ): Outcome {
+        // Still walking to the back of the line.
+        if (visitor.pathIndex < visitor.path.size) {
+            return walkTowards(state, visitor, dt, walkable, occupied, ledger)
+        }
+
+        val target = state.structureById(visitor.targetId)
+        if (target == null) return leaveQueue(state, visitor, dt, walkable, occupied, ledger)
+
+        val chain = cachedQueueChain(state.map, target)
+        val slot = chain.indexOfFirst { it.col == visitor.tileCol && it.row == visitor.tileRow }
+        if (slot < 0) return leaveQueue(state, visitor, dt, walkable, occupied, ledger)
+
+        // Waiting this long with no money left is a waste of everybody's day.
+        if (visitor.wallet < target.item.price) {
+            occupied[queueIndex(state, visitor.tileCol, visitor.tileRow)] = false
+            return continueVisit(
+                state,
+                visitor.copy(state = VisitorState.WALKING, targetId = null),
+                dt, walkable, occupied, ledger
+            )
+        }
+
+        val here = queueIndex(state, visitor.tileCol, visitor.tileRow)
+
+        if (slot == 0) {
+            if (target.riders + ledger.ridersFor(target.id) >= seatLimit(target)) {
+                // Ride is full: shuffle on the spot.
+                return Outcome(visitor.copy(bob = visitor.bob + dt * 3f), false, 0)
+            }
+            ledger.seat(target.id)
+            occupied[here] = false
+            return Outcome(applyUse(visitor, target), false, target.item.price)
+        }
+
+        val next = chain[slot - 1]
+        val nextIndex = queueIndex(state, next.col, next.row)
+        val blocked = nextIndex >= 0 && nextIndex < occupied.size && occupied[nextIndex]
+        if (blocked) return Outcome(visitor.copy(bob = visitor.bob + dt * 3f), false, 0)
+
+        occupied[here] = false
+        if (nextIndex in occupied.indices) occupied[nextIndex] = true
+        return Outcome(
+            visitor.copy(
+                col = next.col + 0.5f,
+                row = next.row + 0.5f,
+                bob = visitor.bob + dt * 6f
+            ),
+            false,
+            0
+        )
+    }
+
+    private fun queueIndex(state: GameState, col: Int, row: Int): Int =
+        if (state.map.inBounds(col, row)) row * state.map.cols + col else -1
+
+    /** Abandons the line (demolished queue, sold attraction) and picks something else. */
+    private fun leaveQueue(
+        state: GameState,
+        visitor: Visitor,
+        dt: Float,
+        walkable: BooleanArray,
+        occupied: BooleanArray,
+        ledger: Ledger
+    ): Outcome = continueVisit(
+        state,
+        visitor.copy(state = VisitorState.WALKING, targetId = null, path = emptyList(), pathIndex = 0),
+        dt, walkable, occupied, ledger
+    )
 
     private fun shouldLeave(state: GameState, visitor: Visitor): Boolean {
         if (visitor.state == VisitorState.LEAVING) return false
@@ -470,6 +662,7 @@ class GameEngine(private val random: Random = Random.Default) {
                 placeStructure(state, item, col, row)
             }
 
+            Placement.QUEUE_JUNCTION -> notify(state, "Queues must stay single file")
             Placement.NOT_ENOUGH_MONEY -> notify(state, "Not enough cash for ${item.displayName}")
             Placement.BLOCKED_BY_WATER -> notify(state, "${item.displayName} cannot go on water")
             Placement.OCCUPIED -> notify(state, "Something is already built there")
@@ -724,6 +917,33 @@ class GameEngine(private val random: Random = Random.Default) {
     }
 }
 
+private fun queueNeighbours(map: ParkMap, col: Int, row: Int): Int {
+    var count = 0
+    if (map.terrainAt(col + 1, row) == Terrain.QUEUE) count++
+    if (map.terrainAt(col - 1, row) == Terrain.QUEUE) count++
+    if (map.terrainAt(col, row + 1) == Terrain.QUEUE) count++
+    if (map.terrainAt(col, row - 1) == Terrain.QUEUE) count++
+    return count
+}
+
+/**
+ * True when laying a queue tile here would branch the line.
+ *
+ * A queue is a chain, so it has to stay single file: three queue neighbours on one tile
+ * would make a T-junction, and guests would have no way to tell which way the front of
+ * the line is. Extending an existing line is fine; bridging a gap is fine; joining two
+ * lines is not.
+ */
+private fun createsQueueJunction(map: ParkMap, col: Int, row: Int): Boolean {
+    if (queueNeighbours(map, col, row) > 2) return true
+    // Nor may this tile push a neighbour past two, which is what joining two lines does.
+    if (map.terrainAt(col + 1, row) == Terrain.QUEUE && queueNeighbours(map, col + 1, row) >= 2) return true
+    if (map.terrainAt(col - 1, row) == Terrain.QUEUE && queueNeighbours(map, col - 1, row) >= 2) return true
+    if (map.terrainAt(col, row + 1) == Terrain.QUEUE && queueNeighbours(map, col, row + 1) >= 2) return true
+    if (map.terrainAt(col, row - 1) == Terrain.QUEUE && queueNeighbours(map, col, row - 1) >= 2) return true
+    return false
+}
+
 /**
  * Pure placement rule check, exposed at file level so the renderer can tint the build
  * ghost without holding a reference to the engine.
@@ -740,6 +960,9 @@ fun placementFor(state: GameState, item: BuildItem, col: Int, row: Int): Placeme
         if (existing != null) return Placement.BUILT_OVER
         val terrain = item.terrain ?: return Placement.NOTHING_TO_DEMOLISH
         if (state.map.terrainAt(col, row) == terrain) return Placement.NOTHING_TO_DEMOLISH
+        if (terrain == Terrain.QUEUE && createsQueueJunction(state.map, col, row)) {
+            return Placement.QUEUE_JUNCTION
+        }
         return if (state.money >= item.cost) Placement.OK else Placement.NOT_ENOUGH_MONEY
     }
 

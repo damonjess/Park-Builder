@@ -41,7 +41,9 @@ class ParkMap private constructor(
         return result
     }
 
-    fun isWalkable(col: Int, row: Int): Boolean = terrainAt(col, row) == Terrain.PATH
+    /** Paths and queue lines are both walked on; water, grass and buildings are not. */
+    fun isWalkable(col: Int, row: Int): Boolean =
+        terrainAt(col, row) == Terrain.PATH || terrainAt(col, row) == Terrain.QUEUE
 
     /**
      * Stable pseudo-random per-tile value in `0..99`.

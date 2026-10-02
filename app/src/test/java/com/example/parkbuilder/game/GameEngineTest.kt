@@ -3,8 +3,11 @@ package com.example.parkbuilder.game
 import com.example.parkbuilder.game.model.BuildItem
 import com.example.parkbuilder.game.model.GameSpeed
 import com.example.parkbuilder.game.model.GameState
+import com.example.parkbuilder.game.model.ParkMap
 import com.example.parkbuilder.game.model.Terrain
 import com.example.parkbuilder.game.model.TilePos
+import com.example.parkbuilder.game.model.VisitorState
+import kotlin.math.abs
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -286,6 +289,83 @@ class GameEngineTest {
         assertFalse(
             "broke guests should have left, but ${state.visitors.count { it.id in starving }} stayed",
             state.visitors.any { it.id in starving }
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // Queue lines
+    // ------------------------------------------------------------------
+
+    @Test
+    fun testQueueChainRunsFromTheRideBackToTheEndOfTheLine() {
+        val state = newPark()
+        val ride = state.structures.first { it.item == BuildItem.DODGEMS }
+
+        val chain = engine().queueChain(state.map, ride)
+
+        assertEquals("expected the three painted queue tiles", 3, chain.size)
+        // Head first — the tile guests board from — then the back of the line.
+        assertEquals(TilePos(10, 20), chain.first())
+        assertEquals(TilePos(10, 22), chain.last())
+        chain.forEach { assertEquals(Terrain.QUEUE, state.map.terrainAt(it.col, it.row)) }
+        // Every link must touch the next, or nobody could ever shuffle forwards.
+        chain.zipWithNext().forEach { (a, b) ->
+            assertEquals("chain jumps between $a and $b", 1, abs(a.col - b.col) + abs(a.row - b.row))
+        }
+    }
+
+    @Test
+    fun testPaintingAQueueTileChargesAndIsWalkable() {
+        val state = newPark()
+        val grass = firstTileOfType(state, Terrain.GRASS)
+
+        val after = engine().applyTool(state, BuildItem.QUEUE, grass.col, grass.row)
+
+        assertEquals(Terrain.QUEUE, after.map.terrainAt(grass.col, grass.row))
+        assertEquals(state.money - BuildItem.QUEUE.cost, after.money)
+        assertTrue("guests must be able to walk a queue", after.map.isWalkable(grass.col, grass.row))
+    }
+
+    @Test
+    fun testAQueueJunctionIsRefused() {
+        var map = ParkMap(8, 8)
+        map = map.withTerrain(2, 1, Terrain.QUEUE)
+        map = map.withTerrain(2, 2, Terrain.QUEUE)
+        map = map.withTerrain(2, 3, Terrain.QUEUE)
+        val line = GameState(map = map)
+
+        // Branching off the middle of the line would be a T-junction.
+        assertEquals(Placement.QUEUE_JUNCTION, placementFor(line, BuildItem.QUEUE, 3, 2))
+        // Carrying straight on is exactly what a queue is for.
+        assertEquals(Placement.OK, placementFor(line, BuildItem.QUEUE, 2, 4))
+    }
+
+    @Test
+    fun testGuestsLineUpAndRideTheQueuedAttraction() {
+        val walker = engine()
+        var state = newPark()
+        var waitedInLine = 0
+        var standingOffQueue = 0
+
+        repeat(8_000) {
+            state = walker.update(state, 0.05f)
+            state.visitors.forEach { visitor ->
+                // pathIndex past the end means they have arrived at the back of the line.
+                if (visitor.state == VisitorState.QUEUEING && visitor.pathIndex >= visitor.path.size) {
+                    waitedInLine++
+                    if (state.map.terrainAt(visitor.tileCol, visitor.tileRow) != Terrain.QUEUE) {
+                        standingOffQueue++
+                    }
+                }
+            }
+        }
+
+        assertTrue("expected guests to wait in the queue lines", waitedInLine > 0)
+        assertEquals("guests in line must stand on queue tiles", 0, standingOffQueue)
+        val dodgems = state.structures.first { it.item == BuildItem.DODGEMS }
+        assertTrue(
+            "expected the queued ride to have taken riders",
+            dodgems.lifetimeVisitors > 0
         )
     }
 

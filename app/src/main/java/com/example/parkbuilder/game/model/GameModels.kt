@@ -6,7 +6,13 @@ enum class Need { HUNGER, THIRST, BLADDER }
 enum class Terrain(val displayName: String) {
     GRASS("Grass"),
     PATH("Path"),
-    WATER("Water")
+    WATER("Water"),
+
+    /**
+     * A railed queue line. Walkable like a path, but guests only stand on it while they
+     * are waiting for the attraction it runs into.
+     */
+    QUEUE("Queue")
 }
 
 enum class ToolCategory(val displayName: String) {
@@ -45,6 +51,7 @@ enum class BuildItem(
 ) {
     // ---- Landscaping ------------------------------------------------------
     PATH("Path", 6, ToolCategory.TERRAIN, terrain = Terrain.PATH),
+    QUEUE("Queue", 5, ToolCategory.TERRAIN, terrain = Terrain.QUEUE),
     WATER("Water", 45, ToolCategory.TERRAIN, terrain = Terrain.WATER),
     GRASS("Grass", 3, ToolCategory.TERRAIN, terrain = Terrain.GRASS),
     BULLDOZE("Demolish", 0, ToolCategory.TERRAIN),
@@ -159,8 +166,15 @@ enum class VisitorState {
     /** Following a path towards a building. */
     WALKING,
 
-    /** On a ride / eating / queueing. */
+    /** On a ride / eating / resting. */
     USING,
+
+    /**
+     * In a queue line, shuffling towards the front one tile at a time. Guests walking to
+     * the back of a line already carry this state so the engine knows not to seat them
+     * the moment they arrive.
+     */
+    QUEUEING,
 
     /** Heading back to the gate and out of the park. */
     LEAVING
@@ -216,7 +230,7 @@ data class ParkStats(
 )
 
 data class GameState(
-    val parkName: String = "Wonder Park",
+    val parkName: String = "Wonderland",
     val money: Int = 12000,
     val map: ParkMap,
     val structures: List<Structure> = emptyList(),

@@ -92,6 +92,7 @@ class ParkLayoutTest {
 
                     else -> when (state.map.terrainAt(col, row)) {
                         Terrain.PATH -> '#'
+                        Terrain.QUEUE -> 'q'
                         Terrain.WATER -> '~'
                         Terrain.GRASS -> '.'
                     }
@@ -118,24 +119,27 @@ class ParkLayoutTest {
         val state = ParkGenerator.newPark()
         var water = 0
         var path = 0
+        var queue = 0
         for (col in 0 until state.map.cols) {
             for (row in 0 until state.map.rows) {
                 when (state.map.terrainAt(col, row)) {
                     Terrain.WATER -> water++
                     Terrain.PATH -> path++
+                    Terrain.QUEUE -> queue++
                     Terrain.GRASS -> Unit
                 }
             }
         }
         assertTrue("expected lakes", water > 20)
         assertTrue("expected a path network", path > 200)
+        assertTrue("expected queue lines drawn for the rides", queue >= 5)
         assertTrue("expected rides", state.structures.count { it.item.category.name == "RIDE" } >= 5)
         // The park should be dressed, not bare.
         assertTrue("expected scattered scenery", state.structures.size > 60)
     }
 
     private fun glyphFor(item: BuildItem): Char = when (item) {
-        BuildItem.PATH, BuildItem.WATER, BuildItem.GRASS, BuildItem.BULLDOZE -> '?'
+        BuildItem.PATH, BuildItem.QUEUE, BuildItem.WATER, BuildItem.GRASS, BuildItem.BULLDOZE -> '?'
         BuildItem.CAROUSEL -> 'C'
         BuildItem.FERRIS_WHEEL -> 'F'
         BuildItem.DODGEMS -> 'D'

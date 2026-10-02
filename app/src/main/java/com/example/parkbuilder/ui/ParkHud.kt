@@ -1,5 +1,6 @@
 package com.example.parkbuilder.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,11 +20,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,38 +40,15 @@ import com.example.parkbuilder.game.model.ToolCategory
 
 /** Chunky wood-and-brass panel colours, in the spirit of the PS1 interface. */
 object HudColors {
-    val Panel = Color(0xFF2C4A6B)
-    val PanelDark = Color(0xFF1B2F45)
-    val PanelLight = Color(0xFF3D6088)
-    val Brass = Color(0xFFD9A94C)
-    val BrassDark = Color(0xFF9A7330)
-    val Cream = Color(0xFFF6E3B0)
-    val Ink = Color(0xFF101A24)
-    val Good = Color(0xFF6BD46B)
-    val Bad = Color(0xFFE85A4F)
-}
-
-/** A single emoji glyph per catalogue entry — cheap "pixel icon" stand-ins. */
-fun BuildItem.glyph(): String = when (this) {
-    BuildItem.PATH -> "🛣"
-    BuildItem.WATER -> "💧"
-    BuildItem.GRASS -> "🌿"
-    BuildItem.BULLDOZE -> "🧨"
-    BuildItem.CAROUSEL -> "🎠"
-    BuildItem.FERRIS_WHEEL -> "🎡"
-    BuildItem.DODGEMS -> "🚗"
-    BuildItem.LOG_FLUME -> "🛶"
-    BuildItem.ROLLER_COASTER -> "🎢"
-    BuildItem.BURGER_BAR -> "🍔"
-    BuildItem.SODA_STAND -> "🥤"
-    BuildItem.ICE_CREAM -> "🍦"
-    BuildItem.GIFT_SHOP -> "🎁"
-    BuildItem.RESTROOM -> "🚻"
-    BuildItem.FLOWERS -> "🌷"
-    BuildItem.BENCH -> "🪑"
-    BuildItem.TREE -> "🌳"
-    BuildItem.LAMP -> "💡"
-    BuildItem.FOUNTAIN -> "⛲"
+    val Panel = Color(0xFF285494)
+    val PanelDark = Color(0xFF1B3A68)
+    val PanelLight = Color(0xFF3B6CB0)
+    val Brass = Color(0xFFE2B048)
+    val BrassDark = Color(0xFFA67C28)
+    val Cream = Color(0xFFFFF0C4)
+    val Ink = Color(0xFF0D1C2E)
+    val Good = Color(0xFF52D652)
+    val Bad = Color(0xFFE84C3D)
 }
 
 @Composable
@@ -195,65 +178,114 @@ fun GameHudBottom(
             .border(2.dp, HudColors.Brass, RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
             .padding(horizontal = 8.dp, vertical = 8.dp)
     ) {
-        // ---- Ticker -------------------------------------------------------
-        val ticker = when {
-            state.messageTimer > 0f && state.message != null -> state.message
-            state.selectedItem != null -> hintFor(state.selectedItem)
-            else -> "Pick something to build, or tap a ride to inspect it"
-        }
-        Text(
-            text = ticker,
-            color = if (state.messageTimer > 0f) HudColors.Brass else HudColors.Cream,
-            fontSize = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ManagerPortrait(state)
+            Spacer(modifier = Modifier.width(8.dp))
 
-        // ---- Category tabs ------------------------------------------------
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ToolCategory.entries.forEach { entry ->
-                val active = entry == category
-                Box(
+            Column(modifier = Modifier.weight(1f)) {
+                // ---- Ticker -----------------------------------------------
+                val ticker = when {
+                    state.messageTimer > 0f && state.message != null -> state.message
+                    state.selectedItem != null -> hintFor(state.selectedItem)
+                    else -> "Pick something to build, or tap a ride to inspect it"
+                }
+                Text(
+                    text = ticker,
+                    color = if (state.messageTimer > 0f) HudColors.Brass else HudColors.Cream,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                // ---- Category tabs ----------------------------------------
+                Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (active) HudColors.Brass else HudColors.Panel)
-                        .clickable { onCategory(entry) }
-                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text = entry.displayName,
-                        color = if (active) HudColors.Ink else HudColors.Cream,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    ToolCategory.entries.forEach { entry ->
+                        val active = entry == category
+                        val iconLabel = when (entry) {
+                            ToolCategory.RIDE -> "🎠 Rides"
+                            ToolCategory.SHOP -> "🏬 Shops"
+                            ToolCategory.FACILITY -> "🚻 Facilities"
+                            ToolCategory.SCENERY -> "🌳 Scenery"
+                            ToolCategory.TERRAIN -> "🧭 Land"
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (active) HudColors.Brass else HudColors.Panel)
+                                .border(1.dp, if (active) HudColors.Cream else HudColors.Brass, RoundedCornerShape(6.dp))
+                                .clickable { onCategory(entry) }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = iconLabel,
+                                color = if (active) HudColors.Ink else HudColors.Cream,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // ---- Items ------------------------------------------------
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    BuildItem.entries.filter { it.category == category }.forEach { item ->
+                        ItemButton(
+                            item = item,
+                            selected = state.selectedItem == item,
+                            affordable = state.money >= item.cost,
+                            onClick = { onSelectItem(item) }
+                        )
+                    }
                 }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // ---- Items --------------------------------------------------------
-        Row(
+/**
+ * The manager's portrait in a brass frame, mirroring the little character the original
+ * keeps tucked into the corner of the interface.
+ */
+@Composable
+private fun ManagerPortrait(state: GameState) {
+    val portrait = remember { TextureAtlas.portrait() }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                .size(54.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(HudColors.PanelLight)
+                .border(2.dp, HudColors.Brass, RoundedCornerShape(6.dp))
+                .padding(2.dp),
+            contentAlignment = Alignment.Center
         ) {
-            BuildItem.entries.filter { it.category == category }.forEach { item ->
-                ItemButton(
-                    item = item,
-                    selected = state.selectedItem == item,
-                    affordable = state.money >= item.cost,
-                    onClick = { onSelectItem(item) }
-                )
-            }
+            Image(
+                bitmap = portrait,
+                contentDescription = "Park manager",
+                modifier = Modifier.fillMaxHeight(),
+                contentScale = ContentScale.Fit
+            )
         }
+        Text(
+            text = "Day ${state.day}",
+            color = HudColors.Brass,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
     }
 }
 
@@ -270,10 +302,14 @@ private fun ItemButton(
         item.category == ToolCategory.TERRAIN -> Color(0xFF4A4335)
         else -> HudColors.Panel
     }
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val icon = remember(item, density) { ParkIcons.icon(item, density, measurer) }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(60.dp)
+            .width(64.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(background)
             .border(
@@ -282,9 +318,14 @@ private fun ItemButton(
                 shape = RoundedCornerShape(8.dp)
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 5.dp)
+            .padding(vertical = 4.dp)
     ) {
-        Text(text = item.glyph(), fontSize = 19.sp)
+        Image(
+            bitmap = icon,
+            contentDescription = item.displayName,
+            modifier = Modifier.size(34.dp),
+            contentScale = ContentScale.Fit
+        )
         Text(
             text = if (item.cost == 0) "free" else "£${item.cost}",
             color = if (affordable) HudColors.Cream else HudColors.Bad,

@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.parkbuilder.game.GameViewModel
 import com.example.parkbuilder.game.model.Iso
+import com.example.parkbuilder.game.model.ParkMap
 import com.example.parkbuilder.game.model.TilePos
 import com.example.parkbuilder.game.model.ToolCategory
 import kotlinx.coroutines.isActive
@@ -136,20 +137,8 @@ fun GameScreen(
                     if (size != viewport) {
                         viewport = size
                         if (!cameraPlaced && size.width > 0f) {
-                            // Open on the front middle of the park at a zoom that shows a
-                            // good couple of dozen tiles across, like the original.
-                            val map = liveMap.value
-                            val zoom = (size.width / 1400f).coerceIn(MIN_ZOOM, 1f)
-                            // Centre the diamond, biased up so the bottom toolbar does not
-                            // sit over the middle of the park.
-                            val focus = Iso.toScreen(map.cols / 2f, map.rows / 2f)
-                            camera = clamp(
-                                Camera(
-                                    zoom = zoom,
-                                    panX = size.width / 2f - focus.x * zoom,
-                                    panY = size.height * 0.42f - focus.y * zoom
-                                )
-                            )
+                            // Open with the park filling the frame, gates and road in shot.
+                            camera = clamp(framingCamera(size, liveMap.value))
                             cameraPlaced = true
                         }
                     }
@@ -309,16 +298,7 @@ fun GameScreen(
                     .background(HudColors.PanelDark.copy(alpha = 0.9f))
                     .border(2.dp, HudColors.Brass, CircleShape)
                     .clickable {
-                        val map = liveMap.value
-                        val focus = Iso.toScreen(map.cols / 2f, map.rows / 2f)
-                        val zoom = (viewport.width / 1400f).coerceIn(MIN_ZOOM, 1f)
-                        camera = clamp(
-                            Camera(
-                                zoom = zoom,
-                                panX = viewport.width / 2f - focus.x * zoom,
-                                panY = viewport.height * 0.42f - focus.y * zoom
-                            )
-                        )
+                        camera = clamp(framingCamera(viewport, liveMap.value))
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -346,6 +326,33 @@ fun GameScreen(
                 .navigationBarsPadding()
         )
     }
+}
+
+/**
+ * Zoom at which the park's diamond covers the viewport.
+ *
+ * The original fills the whole frame with park. A park floating as a small diamond in a
+ * dark void is the single biggest reason a screenshot of this looked nothing like it, so
+ * the opening shot is framed to fill the screen instead.
+ */
+fun fillZoom(viewport: Size, map: ParkMap): Float {
+    if (viewport.width <= 0f || viewport.height <= 0f) return 1f
+    val span = (map.cols + map.rows).toFloat()
+    return maxOf(
+        viewport.width / (span * Iso.HALF_W),
+        viewport.height / (span * Iso.HALF_H)
+    ).coerceIn(MIN_ZOOM, MAX_ZOOM)
+}
+
+/** Camera centred on the park and zoomed so the park fills the frame. */
+fun framingCamera(viewport: Size, map: ParkMap): Camera {
+    val zoom = fillZoom(viewport, map)
+    val focus = Iso.toScreen(map.cols / 2f, map.rows / 2f)
+    return Camera(
+        zoom = zoom,
+        panX = viewport.width / 2f - focus.x * zoom,
+        panY = viewport.height / 2f - focus.y * zoom
+    )
 }
 
 private fun centroidOf(changes: List<PointerInputChange>): Offset {

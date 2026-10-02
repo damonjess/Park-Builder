@@ -14,14 +14,11 @@ data class TilePos(val col: Int, val row: Int)
  */
 object Iso {
 
-    /** Full width of one diamond tile, in unscaled world pixels. */
     const val TILE_W = 64f
-
-    /** Full height of one diamond tile — exactly half the width, hence "2:1". */
-    const val TILE_H = 32f
+    const val TILE_H = 64f
 
     const val HALF_W = TILE_W / 2f
-    const val HALF_H = TILE_H / 2f
+    const val HALF_H = TILE_H / 4f // 16f for 2:1 dimetric projection
 
     fun toScreenX(col: Float, row: Float): Float = (col - row) * HALF_W
 
@@ -29,11 +26,9 @@ object Iso {
 
     fun toScreen(col: Float, row: Float): Offset = Offset(toScreenX(col, row), toScreenY(col, row))
 
-    /** Fractional column for a world-space screen point (unscaled world units). */
     fun toCol(screenX: Float, screenY: Float): Float =
         (screenX / HALF_W + screenY / HALF_H) / 2f
 
-    /** Fractional row for a world-space screen point (unscaled world units). */
     fun toRow(screenX: Float, screenY: Float): Float =
         (screenY / HALF_H - screenX / HALF_W) / 2f
 

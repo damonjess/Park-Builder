@@ -56,6 +56,9 @@ internal object TextureAtlas {
     fun plates(base: Color): ImageBitmap =
         image("plates${base.value}") { PixelArt.plates(base, seedFor(base)) }
 
+    fun checker(a: Color, b: Color): ImageBitmap =
+        image("checker${a.value}-${b.value}") { PixelArt.checker(a, b, seedFor(a)) }
+
     fun asphalt(): ImageBitmap =
         image("asphalt") { PixelArt.asphalt(seedFor(Palette.Asphalt)) }
 

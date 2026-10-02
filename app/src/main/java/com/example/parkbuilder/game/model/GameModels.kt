@@ -59,7 +59,7 @@ enum class BuildItem(
     // ---- Rides ------------------------------------------------------------
     CAROUSEL(
         "Carousel", 320, ToolCategory.RIDE, 2, 2,
-        price = 3, upkeep = 12, excitement = 0.45f, capacity = 8, useSeconds = 12f, blockHeight = 26f
+        price = 3, upkeep = 12, excitement = 0.45f, capacity = 8, useSeconds = 12f, blockHeight = 34f
     ),
     FERRIS_WHEEL(
         "Ferris Wheel", 780, ToolCategory.RIDE, 3, 3,
@@ -75,31 +75,31 @@ enum class BuildItem(
     ),
     ROLLER_COASTER(
         "Coaster", 2600, ToolCategory.RIDE, 4, 4,
-        price = 8, upkeep = 55, excitement = 0.90f, capacity = 14, useSeconds = 24f, blockHeight = 48f
+        price = 8, upkeep = 55, excitement = 0.90f, capacity = 14, useSeconds = 24f, blockHeight = 72f
     ),
 
     // ---- Shops ------------------------------------------------------------
     BURGER_BAR(
         "Burger Bar", 240, ToolCategory.SHOP,
-        price = 6, upkeep = 8, need = Need.HUNGER, useSeconds = 6f, blockHeight = 28f
+        price = 6, upkeep = 8, need = Need.HUNGER, useSeconds = 6f, blockHeight = 40f
     ),
     SODA_STAND(
         "Soda Stand", 180, ToolCategory.SHOP,
-        price = 4, upkeep = 6, need = Need.THIRST, useSeconds = 4f, blockHeight = 24f
+        price = 4, upkeep = 6, need = Need.THIRST, useSeconds = 4f, blockHeight = 34f
     ),
     ICE_CREAM(
         "Ice Cream", 210, ToolCategory.SHOP,
-        price = 5, upkeep = 7, need = Need.HUNGER, useSeconds = 5f, blockHeight = 26f
+        price = 5, upkeep = 7, need = Need.HUNGER, useSeconds = 5f, blockHeight = 36f
     ),
     GIFT_SHOP(
         "Gift Shop", 300, ToolCategory.SHOP,
-        price = 9, upkeep = 10, excitement = 0.10f, useSeconds = 5f, blockHeight = 30f
+        price = 9, upkeep = 10, excitement = 0.10f, useSeconds = 5f, blockHeight = 44f
     ),
 
     // ---- Facilities -------------------------------------------------------
     RESTROOM(
         "Restroom", 260, ToolCategory.FACILITY,
-        price = 2, upkeep = 7, need = Need.BLADDER, useSeconds = 8f, blockHeight = 28f
+        price = 2, upkeep = 7, need = Need.BLADDER, useSeconds = 8f, blockHeight = 38f
     ),
 
     // ---- Scenery ----------------------------------------------------------

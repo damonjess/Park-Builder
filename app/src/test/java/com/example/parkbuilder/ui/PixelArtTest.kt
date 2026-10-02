@@ -120,6 +120,7 @@ class PixelArtTest {
             "planks" to PixelArt.planks(Palette.Wood, 3),
             "shingles" to PixelArt.shingles(Palette.RoofRed, 3),
             "plates" to PixelArt.plates(Palette.Metal, 3),
+            "checker" to PixelArt.checker(Palette.RoofTeal, Palette.RoofCream, 3),
             "stripes" to PixelArt.stripes(Palette.RoofRed, Palette.RoofCream),
             "asphalt" to PixelArt.asphalt(3)
         )

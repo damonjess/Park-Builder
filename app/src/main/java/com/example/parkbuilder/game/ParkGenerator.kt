@@ -41,7 +41,7 @@ object ParkGenerator {
 
         // ---- Path network ---------------------------------------------------
         // Avenues are two tiles wide so the park reads as a place, not a maze.
-        map = map.paintRect(18, 8, 21, 38, Terrain.PATH)   // main avenue through the middle
+        map = map.paintRect(18, 8, 19, 38, Terrain.PATH)   // main avenue through the middle
         map = map.paintRect(5, 9, 34, 10, Terrain.PATH)    // north avenue
         map = map.paintRect(5, 23, 34, 24, Terrain.PATH)   // south avenue
         map = map.paintRect(8, 9, 9, 24, Terrain.PATH)     // west link
@@ -63,10 +63,12 @@ object ParkGenerator {
             BuildItem.FERRIS_WHEEL to TilePos(10, 12),
             BuildItem.DODGEMS to TilePos(11, 20),
             BuildItem.LOG_FLUME to TilePos(22, 11),
-            BuildItem.ROLLER_COASTER to TilePos(22, 18),
+            // These three hug the main avenue, which is now two tiles wide — col 21 is
+            // lawn again, so they sit one tile further west to keep their path frontage.
+            BuildItem.ROLLER_COASTER to TilePos(20, 18),
             BuildItem.BURGER_BAR to TilePos(22, 25),
-            BuildItem.SODA_STAND to TilePos(22, 28),
-            BuildItem.ICE_CREAM to TilePos(22, 30),
+            BuildItem.SODA_STAND to TilePos(20, 28),
+            BuildItem.ICE_CREAM to TilePos(20, 30),
             BuildItem.GIFT_SHOP to TilePos(26, 30),
             BuildItem.RESTROOM to TilePos(29, 26),
             BuildItem.BENCH to TilePos(23, 34),
@@ -87,16 +89,22 @@ object ParkGenerator {
         }
 
         // ---- High street ----------------------------------------------------
-        // The reference is packed: rows of shops and small rides lining every path, with
-        // barely a bare patch of grass in sight. So once the headline rides are down, fill
-        // the frontage: anything that can sit beside a path and still have elbow room.
+        // The reference is *packed*: rows of stalls and rides lining every path with
+        // barely a bare patch of grass in sight. Sixteen buildings was far too polite, so
+        // this pass keeps going until the frontage runs out.
         val shopRotation = listOf(
             BuildItem.BURGER_BAR,
             BuildItem.SODA_STAND,
             BuildItem.CAROUSEL,
             BuildItem.ICE_CREAM,
             BuildItem.GIFT_SHOP,
-            BuildItem.DODGEMS
+            BuildItem.DODGEMS,
+            BuildItem.RESTROOM,
+            BuildItem.ICE_CREAM,
+            BuildItem.BURGER_BAR,
+            BuildItem.FOUNTAIN,
+            BuildItem.SODA_STAND,
+            BuildItem.GIFT_SHOP
         )
         val spots = ArrayList<TilePos>(COLS * ROWS)
         for (col in 1 until COLS - 1) {
@@ -106,7 +114,7 @@ object ParkGenerator {
 
         var built = 0
         spots.forEach { spot ->
-            if (built >= 16) return@forEach
+            if (built >= 46) return@forEach
             val item = shopRotation[built % shopRotation.size]
             if (!fits(map, structures, spot.col, spot.row, item)) return@forEach
             if (!hasFrontage(map, structures, spot.col, spot.row, item)) return@forEach
@@ -132,16 +140,16 @@ object ParkGenerator {
                 val riverside = touchesPath(map, col, row, 1)
                 val item = if (riverside) {
                     when {
-                        random.nextDouble() < 0.28 -> BuildItem.BENCH
-                        random.nextDouble() < 0.22 -> BuildItem.LAMP
-                        random.nextDouble() < 0.40 -> BuildItem.FLOWERS
+                        random.nextDouble() < 0.30 -> BuildItem.BENCH
+                        random.nextDouble() < 0.24 -> BuildItem.LAMP
+                        random.nextDouble() < 0.46 -> BuildItem.FLOWERS
                         random.nextDouble() < 0.26 -> BuildItem.TREE
                         else -> null
                     }
                 } else {
                     when {
-                        random.nextDouble() < 0.36 -> BuildItem.TREE
-                        random.nextDouble() < 0.22 -> BuildItem.FLOWERS
+                        random.nextDouble() < 0.38 -> BuildItem.TREE
+                        random.nextDouble() < 0.32 -> BuildItem.FLOWERS
                         else -> null
                     }
                 }
@@ -167,7 +175,13 @@ object ParkGenerator {
         )
     }
 
-    /** True when [item] fits at [col],[row] on dry, unoccupied land. */
+    /**
+     * True when [item] fits at [col],[row] on open grass.
+     *
+     * Only grass qualifies: without this the fill pass happily built stalls on top of the
+     * paths, which both covered the walkway and put every building on grey paving instead
+     * of the lawn the reference lines them along.
+     */
     private fun fits(
         map: ParkMap,
         structures: List<Structure>,
@@ -178,7 +192,7 @@ object ParkGenerator {
         for (c in col until col + item.wTiles) {
             for (r in row until row + item.hTiles) {
                 if (!map.inBounds(c, r)) return false
-                if (map.terrainAt(c, r) == Terrain.WATER) return false
+                if (map.terrainAt(c, r) != Terrain.GRASS) return false
                 if (structures.any { it.covers(c, r) }) return false
             }
         }

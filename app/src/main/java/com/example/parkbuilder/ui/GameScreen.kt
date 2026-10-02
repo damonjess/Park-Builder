@@ -306,14 +306,13 @@ fun GameScreen(
             }
         }
 
+        // Flush against the top edge: the app runs immersive, so the strip the status bar
+        // used to occupy belongs to the park.
         GameHudTop(
             state = state,
             onSpeed = { viewModel.setSpeed(it) },
             onNewPark = { viewModel.newPark() },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+            modifier = Modifier.align(Alignment.TopCenter)
         )
 
         GameHudBottom(

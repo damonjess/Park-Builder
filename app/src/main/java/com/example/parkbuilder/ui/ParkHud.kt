@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -51,6 +52,10 @@ object HudColors {
     val Bad = Color(0xFFE84C3D)
 }
 
+/**
+ * One slim status strip. It used to be two full rows, which in landscape left barely a
+ * third of the screen for the park itself.
+ */
 @Composable
 fun GameHudTop(
     state: GameState,
@@ -58,105 +63,83 @@ fun GameHudTop(
     onNewPark: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    // Only the bottom corners are rounded: the strip is flush with the top of the screen.
+    val stripShape = RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp)
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(stripShape)
             .background(HudColors.PanelDark)
-            .border(2.dp, HudColors.Brass, RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .border(2.dp, HudColors.Brass, stripShape)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Row 1: Park Name (left) & Money / Today info (right)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = state.parkName,
-                color = HudColors.Cream,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "today £${state.todayIncome} • ${state.stats.visitors} guests",
-                    color = HudColors.Cream.copy(alpha = 0.75f),
-                    fontSize = 10.sp,
-                    maxLines = 1
-                )
-                Text(
-                    text = "£${state.money}",
-                    color = if (state.money < 0) HudColors.Bad else HudColors.Good,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Row 2: Stats (left) & Speed controls + New park button (right)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Day ${state.day}  •  ${state.stats.rides} rides  •  rating ${state.stats.rating}/100",
-                color = HudColors.Brass,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                GameSpeed.entries.forEach { speed ->
-                    val active = state.speed == speed
-                    Box(
-                        modifier = Modifier
-                            .size(width = 32.dp, height = 26.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(if (active) HudColors.Brass else HudColors.PanelLight)
-                            .clickable { onSpeed(speed) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = speed.label,
-                            color = if (active) HudColors.Ink else HudColors.Cream,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
+        Text(
+            text = state.parkName,
+            color = HudColors.Cream,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Day ${state.day}  •  ${state.stats.rides} rides  •  rating ${state.stats.rating}",
+            color = HudColors.Brass,
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "£${state.todayIncome} • ${state.stats.visitors}g",
+            color = HudColors.Cream.copy(alpha = 0.75f),
+            fontSize = 10.sp,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "£${state.money}",
+            color = if (state.money < 0) HudColors.Bad else HudColors.Good,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            GameSpeed.entries.forEach { speed ->
+                val active = state.speed == speed
                 Box(
                     modifier = Modifier
-                        .size(width = 38.dp, height = 26.dp)
+                        .size(width = 30.dp, height = 22.dp)
                         .clip(RoundedCornerShape(5.dp))
-                        .background(HudColors.PanelLight)
-                        .clickable(onClick = onNewPark),
+                        .background(if (active) HudColors.Brass else HudColors.PanelLight)
+                        .clickable { onSpeed(speed) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "NEW",
-                        color = HudColors.Cream,
+                        text = speed.label,
+                        color = if (active) HudColors.Ink else HudColors.Cream,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+            Box(
+                modifier = Modifier
+                    .size(width = 34.dp, height = 22.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(HudColors.PanelLight)
+                    .clickable(onClick = onNewPark),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "NEW",
+                    color = HudColors.Cream,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -176,80 +159,79 @@ fun GameHudBottom(
             .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
             .background(HudColors.PanelDark)
             .border(2.dp, HudColors.Brass, RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
-            .padding(horizontal = 8.dp, vertical = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
+        // Row 1: portrait + ticker + category tabs share a line. They used to occupy
+        // three separate rows, which is what pushed the panel two thirds up the screen.
         Row(verticalAlignment = Alignment.CenterVertically) {
             ManagerPortrait(state)
             Spacer(modifier = Modifier.width(8.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                // ---- Ticker -----------------------------------------------
-                val ticker = when {
-                    state.messageTimer > 0f && state.message != null -> state.message
-                    state.selectedItem != null -> hintFor(state.selectedItem)
-                    else -> "Pick something to build, or tap a ride to inspect it"
-                }
-                Text(
-                    text = ticker,
-                    color = if (state.messageTimer > 0f) HudColors.Brass else HudColors.Cream,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
+            val ticker = when {
+                state.messageTimer > 0f && state.message != null -> state.message
+                state.selectedItem != null -> hintFor(state.selectedItem)
+                else -> "Pick something to build, or tap a ride to inspect it"
+            }
+            Text(
+                text = ticker,
+                color = if (state.messageTimer > 0f) HudColors.Brass else HudColors.Cream,
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
 
-                // ---- Category tabs ----------------------------------------
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    ToolCategory.entries.forEach { entry ->
-                        val active = entry == category
-                        val iconLabel = when (entry) {
-                            ToolCategory.RIDE -> "🎠 Rides"
-                            ToolCategory.SHOP -> "🏬 Shops"
-                            ToolCategory.FACILITY -> "🚻 Facilities"
-                            ToolCategory.SCENERY -> "🌳 Scenery"
-                            ToolCategory.TERRAIN -> "🧭 Land"
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (active) HudColors.Brass else HudColors.Panel)
-                                .border(1.dp, if (active) HudColors.Cream else HudColors.Brass, RoundedCornerShape(6.dp))
-                                .clickable { onCategory(entry) }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = iconLabel,
-                                color = if (active) HudColors.Ink else HudColors.Cream,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            ) {
+                ToolCategory.entries.forEach { entry ->
+                    val active = entry == category
+                    val iconLabel = when (entry) {
+                        ToolCategory.RIDE -> "🎠 Rides"
+                        ToolCategory.SHOP -> "🏬 Shops"
+                        ToolCategory.FACILITY -> "🚻 Facilities"
+                        ToolCategory.SCENERY -> "🌳 Scenery"
+                        ToolCategory.TERRAIN -> "🧭 Land"
                     }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // ---- Items ------------------------------------------------
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    BuildItem.entries.filter { it.category == category }.forEach { item ->
-                        ItemButton(
-                            item = item,
-                            selected = state.selectedItem == item,
-                            affordable = state.money >= item.cost,
-                            onClick = { onSelectItem(item) }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (active) HudColors.Brass else HudColors.Panel)
+                            .border(1.dp, if (active) HudColors.Cream else HudColors.Brass, RoundedCornerShape(6.dp))
+                            .clickable { onCategory(entry) }
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = iconLabel,
+                            color = if (active) HudColors.Ink else HudColors.Cream,
+                            fontSize = 9.sp,
+                            lineHeight = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(3.dp))
+
+        // Row 2: items
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            BuildItem.entries.filter { it.category == category }.forEach { item ->
+                ItemButton(
+                    item = item,
+                    selected = state.selectedItem == item,
+                    affordable = state.money >= item.cost,
+                    onClick = { onSelectItem(item) }
+                )
             }
         }
     }
@@ -257,34 +239,26 @@ fun GameHudBottom(
 
 /**
  * The manager's portrait in a brass frame, mirroring the little character the original
- * keeps tucked into the corner of the interface.
+ * keeps tucked into the corner of the interface. Inline — the day counter already lives
+ * in the top strip, and a stacked label here cost a whole row of park height.
  */
 @Composable
 private fun ManagerPortrait(state: GameState) {
     val portrait = remember { TextureAtlas.portrait() }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(54.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(HudColors.PanelLight)
-                .border(2.dp, HudColors.Brass, RoundedCornerShape(6.dp))
-                .padding(2.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                bitmap = portrait,
-                contentDescription = "Park manager",
-                modifier = Modifier.fillMaxHeight(),
-                contentScale = ContentScale.Fit
-            )
-        }
-        Text(
-            text = "Day ${state.day}",
-            color = HudColors.Brass,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(HudColors.PanelLight)
+            .border(2.dp, HudColors.Brass, RoundedCornerShape(6.dp))
+            .padding(2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            bitmap = portrait,
+            contentDescription = "Park manager",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit
         )
     }
 }
@@ -309,7 +283,7 @@ private fun ItemButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(64.dp)
+            .width(52.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(background)
             .border(
@@ -318,24 +292,26 @@ private fun ItemButton(
                 shape = RoundedCornerShape(8.dp)
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp)
+            .padding(vertical = 2.dp)
     ) {
         Image(
             bitmap = icon,
             contentDescription = item.displayName,
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(22.dp),
             contentScale = ContentScale.Fit
         )
         Text(
             text = if (item.cost == 0) "free" else "£${item.cost}",
             color = if (affordable) HudColors.Cream else HudColors.Bad,
-            fontSize = 9.sp,
+            fontSize = 8.sp,
+            lineHeight = 9.sp,
             fontWeight = FontWeight.Bold
         )
         Text(
             text = item.displayName,
             color = HudColors.Cream.copy(alpha = 0.8f),
-            fontSize = 8.sp,
+            fontSize = 7.sp,
+            lineHeight = 8.sp,
             maxLines = 1,
             textAlign = TextAlign.Center
         )

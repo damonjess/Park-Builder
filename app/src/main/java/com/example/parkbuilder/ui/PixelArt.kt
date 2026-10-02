@@ -521,6 +521,34 @@ internal object PixelArt {
         return image
     }
 
+    /**
+     * Harlequin floor: the chequered riding surface the original lays under its flat-bed
+     * rides. Two tones with a grout line and a little wear, so a ride deck reads as a
+     * *painted floor* instead of the flat grey slab it used to be.
+     */
+    fun checker(a: Color, b: Color, seed: Int, cell: Int = 4): PixelImage {
+        val image = PixelImage(MATERIAL, MATERIAL)
+        val first = a.packed()
+        val second = b.packed()
+        val firstWorn = mixArgb(a, Color.Black, 0.2f)
+        val secondWorn = mixArgb(b, Color.Black, 0.18f)
+        val grout = mixArgb(a, Color.Black, 0.42f)
+        for (y in 0 until MATERIAL) {
+            for (x in 0 until MATERIAL) {
+                val dark = ((x / cell) + (y / cell)) % 2 == 0
+                val onGrout = y % (cell * 2) == cell * 2 - 1 || x % (cell * 2) == cell * 2 - 1
+                image.set(
+                    x, y, when {
+                        onGrout && hash(x, y, seed) % 3 != 0 -> grout
+                        dark -> if (hash(x, y, seed) % 29 == 0) firstWorn else first
+                        else -> if (hash(x, y, seed) % 31 == 0) secondWorn else second
+                    }
+                )
+            }
+        }
+        return image
+    }
+
     /** Tarmac for the road outside the gate. */
     fun asphalt(seed: Int): PixelImage {
         val image = PixelImage(32, 32)
@@ -667,6 +695,35 @@ internal object PixelArt {
         return image
     }
 
+    /**
+     * Crops away fully transparent margins, so a sprite's bounding box *is* its ink.
+     *
+     * Without this, a prop with empty rows underneath its artwork hovers above the roof it
+     * is supposed to be standing on — which is exactly what the burger sprite did.
+     */
+    fun PixelImage.trimmed(): PixelImage {
+        var minX = w
+        var minY = h
+        var maxX = -1
+        var maxY = -1
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                if (pixels[y * w + x] == 0) continue
+                if (x < minX) minX = x
+                if (y < minY) minY = y
+                if (x > maxX) maxX = x
+                if (y > maxY) maxY = y
+            }
+        }
+        if (maxX < minX || maxY < minY) return this
+        if (minX == 0 && minY == 0 && maxX == w - 1 && maxY == h - 1) return this
+        val out = PixelImage(maxX - minX + 1, maxY - minY + 1)
+        for (y in minY..maxY) {
+            for (x in minX..maxX) out.set(x - minX, y - minY, pixels[y * w + x])
+        }
+        return out
+    }
+
     /** A tall roof prop: what the shop is selling, silhouetted against the sky. */
     fun roofProp(item: BuildItem): PixelImage = when (item) {
         BuildItem.BURGER_BAR -> burger()
@@ -675,7 +732,7 @@ internal object PixelArt {
         BuildItem.GIFT_SHOP -> giftBox()
         BuildItem.RESTROOM -> restroomSign()
         else -> balloon()
-    }
+    }.trimmed()
 
     fun flag(colour: Color): PixelImage {
         val image = PixelImage(14, 10)
